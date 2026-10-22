@@ -1,7 +1,7 @@
 #[cfg(not(feature = "std"))]
-use core::{any, fmt, ops, time::Duration};
+use core::{any, fmt, marker::PhantomData, ops, time::Duration};
 #[cfg(feature = "std")]
-use std::{any, fmt, ops, time::Duration};
+use std::{any, fmt, marker::PhantomData, ops, time::Duration};
 
 #[cfg(not(feature = "std"))]
 use alloc::{
@@ -164,42 +164,131 @@ impl<Id: Display, S: Display> Field<Id, S> {
 ///
 /// This type is used to attach type information to error reports, which is useful
 /// for debugging type-related issues or showing what types were involved in an operation.
-#[derive(PartialEq, Eq, derive_more::Deref)]
-pub struct Type(&'static str);
+///
+/// `Type` is generic over the referenced type `T`, but holds it only via a
+/// [`PhantomData<fn() -> T>`](core::marker::PhantomData). Function pointers are
+/// always `Send + Sync` regardless of their return type, so a `Type<T>` stays
+/// `Send + Sync` even when `T` itself is neither `Send` nor `Sync`.
+#[derive(PartialEq, Eq)]
+pub struct Type<T = &'static str> {
+    /// The display name of the referenced type.
+    name: &'static str,
+    _marker: PhantomData<fn() -> T>,
+}
 
-impl Type {
+impl<T> Type<T> {
+    /// Build a `Type` from a pre-computed type name.
+    const fn new(name: &'static str) -> Self {
+        Self {
+            name,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl Type<&'static str> {
     /// Create a type attachment for the given type.
     ///
     /// This will be a const fn when `type_name` becomes const fn in stable Rust.
     #[must_use]
-    pub fn of<T>() -> Self {
-        Self(simple_type_name::<T>())
+    pub fn of<U>() -> Type<U> {
+        Type::<U>::new(any::type_name::<U>())
     }
 
+    /// Create a type attachment using the fully-qualified type name.
     #[must_use]
-    pub fn any<T>() -> Self {
-        Self(any::type_name::<T>())
+    pub fn any<U>() -> Type<U> {
+        Type::<U>::new(any::type_name::<U>())
     }
 
     /// Create a type attachment for the type of the given value.
-    pub fn of_val<T: ?Sized>(_val: &T) -> Self {
-        Self(simple_type_name::<T>())
+    pub fn of_val<U>(_val: &U) -> Type<U> {
+        Type::<U>::new(any::type_name::<U>())
     }
-    /// Create a type attachment with a fully qualified URI
-    pub fn any_val<T: ?Sized>(_val: &T) -> Self {
-        Self(any::type_name::<T>())
+
+    /// Create a type attachment with a fully qualified name from the type of the given value.
+    pub fn any_val<U>(_val: &U) -> Type<U> {
+        Type::<U>::new(any::type_name::<U>())
+    }
+
+    /// Create a `Type` that holds only the fully-qualified type name of `T`,
+    /// without carrying the type `T` itself.
+    ///
+    /// Unlike [`Type::of`], this accepts non-`'static` (and `!Sized`) types,
+    /// at the cost of erasing `T`'s identity from the marker. The result is a
+    /// plain `Type<&'static str>` that renders identically to [`Type::of`].
+    #[must_use]
+    pub fn name_of<T: ?Sized>() -> Type<&'static str> {
+        Type::<&'static str>::new(any::type_name::<T>())
     }
 }
 
-impl fmt::Display for Type {
+impl<T> fmt::Display for Type<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "<{}>", self.0)
+        write!(f, "<{}>", self.name)
     }
 }
 
-impl fmt::Debug for Type {
+impl<T> fmt::Debug for Type<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("Type").field(&self.0).finish()
+        f.debug_tuple("Type").field(&self.name).finish()
+    }
+}
+
+impl<T> ops::Deref for Type<T> {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        self.name
+    }
+}
+
+/// A type marker like [`Type`], but rendered with its leading item path stripped.
+///
+/// # Example
+///
+/// ```
+/// use std::path::PathBuf;
+/// use rootcause_types::SimpleType;
+///
+/// let ty = SimpleType::of::<PathBuf>();
+/// assert_eq!(format!("{ty}"), "<PathBuf>");
+/// ```
+#[derive(PartialEq, Eq)]
+pub struct SimpleType<T = &'static str>(PhantomData<fn() -> T>);
+
+impl SimpleType<&'static str> {
+    /// Create a `SimpleType` marker for the given type.
+    #[must_use]
+    pub fn of<U>() -> SimpleType<U> {
+        SimpleType(PhantomData)
+    }
+
+    /// Create a `SimpleType` marker for the type of the given value.
+    pub fn of_val<U>(_val: &U) -> SimpleType<U> {
+        SimpleType(PhantomData)
+    }
+}
+
+impl<T> fmt::Display for SimpleType<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "<{}>", simple_type_name::<T>())
+    }
+}
+
+impl<T> fmt::Debug for SimpleType<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("SimpleType")
+            .field(&simple_type_name::<T>())
+            .finish()
+    }
+}
+
+impl<T> ops::Deref for SimpleType<T> {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        simple_type_name::<T>()
     }
 }
 
@@ -213,14 +302,15 @@ impl fmt::Debug for Type {
 ///
 /// ```
 /// use std::path::PathBuf;
-/// use rootcause_types::{ty, Type};
+/// use rootcause_types::ty;
 ///
-/// // Create type attachments for built-in types
+/// // `ty!` renders the fully-qualified type name, matching `core::any::type_name`.
 /// let num_type = ty!(PathBuf);
-/// assert_eq!(*num_type, "PathBuf");
+/// assert_eq!(format!("{num_type}"), "<std::path::PathBuf>");
 ///
+/// // `ty!(full: T)` is an equivalent alias.
 /// let num_type = ty!(full: PathBuf);
-/// assert_eq!(*num_type, "std::path::PathBuf");
+/// assert_eq!(format!("{num_type}"), "<std::path::PathBuf>");
 /// ```
 #[macro_export]
 macro_rules! ty {

@@ -10,7 +10,7 @@ use alloc::format;
 
 use crate::{
     Index, Report, ThinContext,
-    attachment::{self, Display, FromTo, Unsupported, simple_type_name},
+    attachment::{self, Display, FromTo, Type, Unsupported, simple_type_name},
     new_report, report, ty,
 };
 
@@ -228,7 +228,7 @@ impl ConversionError {
     /// This method creates a `ConversionError` report showing the source
     /// and target types of the failed conversion.
     #[track_caller]
-    pub fn new<F, T>() -> Report<Self> {
+    pub fn new<F: 'static, T: 'static>() -> Report<Self> {
         new_report(Self).attach(FromTo(ty!(F), ty!(T)))
     }
 
@@ -237,7 +237,9 @@ impl ConversionError {
     /// This method converts an existing error context into a `ConversionError`
     /// and attaches the source and target type information.
     #[track_caller]
-    pub fn from<F, T>(ctx: impl core::error::Error + Send + Sync + 'static) -> Report<Self> {
+    pub fn from<F: 'static, T: 'static>(
+        ctx: impl core::error::Error + Send + Sync + 'static,
+    ) -> Report<Self> {
         report!(ctx)
             .context(Self::VALUE)
             .attach(FromTo(ty!(F), ty!(T)))
@@ -259,7 +261,7 @@ impl NotFound {
     /// This method creates a `NotFound` report indicating that an item
     /// at a specific index or key could not be found.
     pub fn with_index<T, K: Display>(key: K) -> Report<Self> {
-        Self::attach_kv(Index(key), ty!(T))
+        Self::attach_kv(Index(key), Type::name_of::<T>())
     }
 }
 

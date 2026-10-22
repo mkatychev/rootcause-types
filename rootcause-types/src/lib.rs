@@ -51,20 +51,13 @@
 //! let data = vec![1, 2, 3];
 //! let error = MyError::attach_kv(ty!(Vec<i32>), data.len());
 //!
-//! #[derive(Debug, Clone, Eq, PartialEq)]
-//! struct Username(String);
-//! impl std::fmt::Display for Username {
-//!     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-//!         write!(f, "{}", self.0)
-//!     }
-//! }
-//!
 //! let username = String::from("alice");
 //! assert_eq!(kv!(username.clone()), KeyValue("username", String::from("alice")));
 //! let error = MyError::attach(kv!(username.clone())); // "username": "alice"
 //!
-//! let username = Username(username);
-//! assert_eq!(format!("{}", kv!(ty: username)), "<Username>: alice");
+//! // `kv!(ty: value)` keys by the value's fully-qualified type name,
+//! // matching `core::any::type_name`.
+//! assert_eq!(format!("{}", kv!(ty: username)), "<alloc::string::String>: alice");
 //! ```
 //!
 //! # Feature Flags
@@ -122,7 +115,7 @@ pub mod context;
 pub mod handlers;
 
 /// Re-export of commonly used attachment types.
-pub use attachment::{Expectation, Field, Index, KeyValue, Type};
+pub use attachment::{Expectation, Field, Index, KeyValue, SimpleType, Type};
 
 use attachment::{Dbg, Debug, Display};
 /// Re-export of all error context types.
@@ -249,13 +242,13 @@ where
 
     /// Create an error report with just a type attachment.
     #[track_caller]
-    fn attach_ty<A>() -> Report<Self> {
+    fn attach_ty<A: 'static>() -> Report<Self> {
         Self::attach(ty!(A))
     }
 
     /// Create an error report with a type as field name and status.
     #[track_caller]
-    fn attach_ty_status<A: Send + Sync + 'static>(status: impl Display) -> Report<Self> {
+    fn attach_ty_status<A: 'static>(status: impl Display) -> Report<Self> {
         Self::attach(Field::new(ty!(A), status))
     }
 }
@@ -927,7 +920,7 @@ where
     #[inline]
     #[track_caller]
     fn expect_by<K: Display>(self, key: K) -> Result<T, Report<NotFound>> {
-        self.expect_kv(Index(key), ty!(T))
+        self.expect_kv(Index(key), Type::name_of::<T>())
     }
 
     /// Convert `None` into a `NotFound` error with a lazily-computed index key.
@@ -938,7 +931,7 @@ where
         K: Display,
         F: FnOnce() -> K,
     {
-        self.expect_kv(Index(key_fn()), ty!(T))
+        self.expect_kv(Index(key_fn()), Type::name_of::<T>())
     }
 }
 
@@ -1363,5 +1356,22 @@ mod test {
         let arr = ["a", "b"];
         let get_oob = arr.get(2).expect_by(2);
         assert_err!(get_oob);
+    }
+
+    #[test]
+    fn type_attachment_is_send_sync_for_non_send_sync_types() {
+        use std::rc::Rc;
+
+        fn assert_send_sync<T: Send + Sync>() {}
+
+        struct NotSendSync(std::marker::PhantomData<Rc<()>>);
+
+        // `Type<NotSendSync>` is `Send + Sync` even though `NotSendSync` is
+        // neither, so it can be attached to a `Send + Sync` report.
+        assert_send_sync::<Type<NotSendSync>>();
+
+        assert_err!(Err::<(), _>(MyError::attach_ty_status::<NotSendSync>(
+            Invalid
+        )));
     }
 }
