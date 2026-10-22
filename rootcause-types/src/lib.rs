@@ -66,8 +66,6 @@
 //! - `backtrace` (default) - Backtrace support via `rootcause-backtrace`
 //! - `tracing` - Integration with the tracing ecosystem
 //! - `spantrace` - Span capture via `rootcause-tracing`
-//! - `anyhow` - Compatibility with anyhow
-//! - `eyre` - Compatibility with eyre
 //!
 //! # Pre-defined Error Contexts
 //!

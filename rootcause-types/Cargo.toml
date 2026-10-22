@@ -14,9 +14,6 @@ backtrace = ["std", "dep:rootcause-backtrace"]
 tracing = ["dep:tracing"]
 spantrace = ["std", "tracing", "dep:rootcause-tracing"]
 
-anyhow = ["rootcause/compat-anyhow1"]
-eyre = ["rootcause/compat-eyre06"]
-
 [dependencies]
 rootcause = { workspace = true }
 rootcause-backtrace = { workspace = true, optional = true }
