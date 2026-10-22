@@ -88,9 +88,9 @@ extern crate alloc;
 
 use core::any;
 
-#[cfg(all(not(feature = "std"), feature = "tracing"))]
+#[cfg(not(feature = "std"))]
 use core::fmt;
-#[cfg(all(feature = "std", feature = "tracing"))]
+#[cfg(feature = "std")]
 use std::fmt;
 #[cfg(feature = "std")]
 use std::path::Path;
@@ -125,9 +125,9 @@ pub use context::*;
 #[inline]
 fn new_report<C>(ctx: C) -> Report<C>
 where
-    C: core::error::Error + Send + Sync + 'static,
+    C: markers::ObjectMarkerFor<markers::SendSync> + core::error::Error,
 {
-    Report::new(ctx)
+    Report::<C, markers::Mutable, markers::SendSync>::new(ctx)
 }
 
 /// A trait for zero-sized error types that provides convenient error creation methods.
@@ -158,7 +158,10 @@ where
     ///
     /// # Arguments
     /// * `ctx` - The source context to convert from
-    fn report<C: core::error::Error + Send + Sync + 'static>(ctx: C) -> Report<Self> {
+    fn report<C>(ctx: C) -> Report<Self>
+    where
+        C: markers::ObjectMarkerFor<markers::SendSync> + core::error::Error,
+    {
         new_report(ctx).context(Self::VALUE)
     }
 
@@ -168,7 +171,7 @@ where
     #[track_caller]
     fn attach_with<A>(attachment: impl FnOnce() -> A) -> Report<Self>
     where
-        A: Display,
+        A: markers::ObjectMarkerFor<markers::SendSync> + fmt::Display + fmt::Debug,
     {
         new_report(Self::VALUE).attach(attachment())
     }
@@ -177,7 +180,7 @@ where
     #[track_caller]
     fn attach<A>(value: A) -> Report<Self>
     where
-        A: Display,
+        A: markers::ObjectMarkerFor<markers::SendSync> + fmt::Display + fmt::Debug,
     {
         new_report(Self::VALUE).attach(value)
     }
@@ -187,34 +190,38 @@ where
     #[track_caller]
     fn attach_dbg<A>(value: A) -> Report<Self>
     where
-        A: Debug,
+        A: markers::ObjectMarkerFor<markers::SendSync> + fmt::Debug,
     {
-        Self::attach(Dbg(value))
+        new_report(Self::VALUE).attach_custom::<handlers::DebugFmt, _>(value)
     }
     /// Create an error report with a key-value pair attachment.
     #[track_caller]
     fn attach_kv<K, V>(key: K, value: V) -> Report<Self>
     where
-        K: Display,
-        V: Display,
+        KeyValue<K, V>: markers::ObjectMarkerFor<markers::SendSync> + fmt::Display + fmt::Debug,
     {
-        Self::attach(KeyValue(key, value))
+        new_report(Self::VALUE).attach(KeyValue(key, value))
     }
     /// Create an error report with a key-value pair where the value is debug-formatted.
     #[track_caller]
     fn attach_kv_dbg<K, V>(key: K, value: V) -> Report<Self>
     where
-        K: Display,
         V: Debug,
+        KeyValue<K, Dbg<V>>:
+            markers::ObjectMarkerFor<markers::SendSync> + fmt::Display + fmt::Debug,
     {
-        Self::attach(KeyValue::dbg(key, value))
+        new_report(Self::VALUE).attach(KeyValue(key, Dbg(value)))
     }
     /// Create an error report with a field attachment.
     ///
     /// This represents a property or field of a data structure and its status.
     #[track_caller]
-    fn attach_field<S: Display>(key: &'static str, status: S) -> Report<Self> {
-        Self::attach(Field::new(key, status))
+    fn attach_field<S>(key: &'static str, status: S) -> Report<Self>
+    where
+        S: Display,
+        Field<&'static str, S>: markers::ObjectMarkerFor<markers::SendSync>,
+    {
+        new_report(Self::VALUE).attach(Field::new(key, status))
     }
 
     /// Create an error report showing expected vs actual values.
@@ -222,34 +229,50 @@ where
     /// Useful for validation errors where you want to show what was expected
     /// versus what was actually received.
     #[track_caller]
-    fn expected_actual<A: attachment::Display>(expected: A, actual: A) -> Report<Self> {
-        Self::attach(Expectation { expected, actual })
+    fn expected_actual<A>(expected: A, actual: A) -> Report<Self>
+    where
+        A: Display,
+        Expectation<A, A>: markers::ObjectMarkerFor<markers::SendSync>,
+    {
+        new_report(Self::VALUE).attach(Expectation { expected, actual })
     }
 
     /// Create an error report with a type-value pair attachment.
     ///
     /// The key will be the type name and the value will be the provided value.
     #[track_caller]
-    fn attach_ty_val<A: Display>(value: A) -> Report<Self> {
-        Self::attach_kv(ty!(A), value)
+    fn attach_ty_val<A>(value: A) -> Report<Self>
+    where
+        KeyValue<Type<A>, A>:
+            markers::ObjectMarkerFor<markers::SendSync> + fmt::Display + fmt::Debug,
+    {
+        new_report(Self::VALUE).attach(KeyValue(ty!(A), value))
     }
 
     /// Create an error report with a type-value pair where the value is debug-formatted.
     #[track_caller]
-    fn attach_ty_dbg<A: Debug>(value: A) -> Report<Self> {
-        Self::attach_kv_dbg(ty!(A), value)
+    fn attach_ty_dbg<A>(value: A) -> Report<Self>
+    where
+        A: Debug,
+        KeyValue<Type<A>, Dbg<A>>:
+            markers::ObjectMarkerFor<markers::SendSync> + fmt::Display + fmt::Debug,
+    {
+        new_report(Self::VALUE).attach(KeyValue(ty!(A), Dbg(value)))
     }
 
     /// Create an error report with just a type attachment.
     #[track_caller]
-    fn attach_ty<A: 'static>() -> Report<Self> {
-        Self::attach(ty!(A))
+    fn attach_ty<A>() -> Report<Self>
+    where
+        Type<A>: markers::ObjectMarkerFor<markers::SendSync>,
+    {
+        new_report(Self::VALUE).attach(ty!(A))
     }
 
     /// Create an error report with a type as field name and status.
     #[track_caller]
-    fn attach_ty_status<A: 'static>(status: impl Display) -> Report<Self> {
-        Self::attach(Field::new(ty!(A), status))
+    fn attach_ty_status<A: 'static>(status: impl Display + Send + Sync) -> Report<Self> {
+        new_report(Self::VALUE).attach(Field::new(ty!(A), status))
     }
 }
 
@@ -477,198 +500,65 @@ where
 
 /// Extension trait that adds attachment methods to error reports and results.
 ///
-/// This trait provides convenient methods for attaching various types of context
-/// information to error reports.
-pub trait AttachExt {
+/// This trait is generic over the report's thread-safety marker `T`, deferring
+/// the `Send + Sync` requirement to [`rootcause::markers::ObjectMarkerFor`].
+/// This means non-`Send + Sync` attachments are accepted for `Local` reports.
+pub trait AttachExt<T> {
     /// Attach a key-value pair to the error.
-    ///
-    /// This method adds contextual information in the form of a key-value pair to the error
-    /// report using the [`KeyValue`] type. Both the key and value must implement `Display` and will be formatted using
-    /// their `Display` implementations in error messages.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use rootcause_types::{AttachExt, ThinContext, Report};
-    ///
-    /// #[derive(ThinContext)]
-    /// struct MyError;
-    ///
-    /// fn process_user(user_id: u64) -> Result<String, Report<MyError>> {
-    ///     // Simulate an error with user context
-    ///     Err(MyError::attach("processing failed"))
-    ///         .attach_kv("user_id", user_id)
-    ///         .attach_kv("operation", "data_processing")
-    /// }
-    /// ```
     #[must_use]
     fn attach_kv<K, V>(self, key: K, value: V) -> Self
     where
-        K: Display,
-        V: Display;
+        KeyValue<K, V>: markers::ObjectMarkerFor<T> + fmt::Display + fmt::Debug;
 
     /// Attach a key-value pair where the value is debug-formatted.
-    ///
-    /// This method is similar to [`attach_kv`](Self::attach_kv) but uses the `Debug`
-    /// implementation of the value instead of `Display`. This is useful for types that
-    /// don't implement `Display` or when you want the debug representation for
-    /// diagnostic purposes.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use rootcause_types::{AttachExt, ThinContext, Report};
-    ///
-    /// #[derive(ThinContext)]
-    /// struct ValidationError;
-    ///
-    /// #[derive(Debug)]
-    /// struct Config {
-    ///     debug_mode: bool,
-    ///     max_connections: usize,
-    /// }
-    ///
-    /// fn validate_config(config: Config) -> Result<(), Report<ValidationError>> {
-    ///     if config.max_connections == 0 {
-    ///         return Err(ValidationError::attach("invalid max_connections"))
-    ///             .attach_kv_dbg("config", config); // Uses Debug formatting
-    ///     }
-    ///     Ok(())
-    /// }
-    /// ```
     #[must_use]
     fn attach_kv_dbg<K, V>(self, key: K, value: V) -> Self
     where
-        K: Display,
-        V: Debug;
+        V: Debug,
+        KeyValue<K, Dbg<V>>: markers::ObjectMarkerFor<T> + fmt::Display + fmt::Debug;
 
     /// Attach a field with its status.
-    ///
-    /// This method attaches information about a specific field or property and its status.
-    /// It's particularly useful for validation errors, data processing failures, or when
-    /// indicating the state of specific fields in data structures.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use rootcause_types::{AttachExt, ThinContext, Report, attachment::Missing};
-    ///
-    /// #[derive(ThinContext)]
-    /// struct ValidationError;
-    ///
-    /// fn validate_user_data(email: Option<&str>, age: Option<u32>) -> Result<(), Report<ValidationError>> {
-    ///     let mut error = None;
-    ///
-    ///     if email.is_none() {
-    ///         error = Some(ValidationError::attach("validation failed")
-    ///             .attach_field_status("email", Missing));
-    ///     }
-    ///     Ok(())
-    /// }
-    /// ```
     #[must_use]
     fn attach_field_status<S>(self, name: &'static str, status: S) -> Self
     where
-        S: Display;
+        S: Display,
+        Field<&'static str, S>: markers::ObjectMarkerFor<T>;
 
     /// Attach a debug-formatted value.
-    ///
-    /// This method attaches a value to the error using its `Debug` implementation for
-    /// formatting. This is useful for types that don't implement `Display` or when
-    /// you want the detailed debug representation rather than the user-friendly display.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use rootcause_types::{AttachExt, ThinContext, Report, DecodeError};
-    ///
-    /// fn decode_data(data: &mut Vec<u8>) -> Result<&str, Report<DecodeError>> {
-    ///     if data.is_empty() {
-    ///         return Err(DecodeError::attach("no data found"))
-    ///             .attach_dbg(data.clone());
-    ///     }
-    ///
-    ///     // ...
-    ///
-    ///     Ok("data processed")
-    /// }
-    /// ```
     #[must_use]
     fn attach_dbg<A>(self, value: A) -> Self
     where
-        A: Debug;
+        A: markers::ObjectMarkerFor<T> + fmt::Debug;
 
     /// Attach a type-value pair where the type name is the key.
-    ///
-    /// This is a convenience method that creates a key-value attachment where the key is
-    /// the type name (using the [`ty!`] macro) and the value is the provided value.
-    /// This is useful for adding context about what type of value was involved in an error.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use rootcause_types::{AttachExt, ThinContext, Report};
-    ///
-    /// #[derive(ThinContext)]
-    /// struct ProcessingError;
-    ///
-    /// fn process_count(count: usize) -> Result<String, Report<ProcessingError>> {
-    ///     if count == 0 {
-    ///         return Err(ProcessingError::attach("invalid count"))
-    ///             .attach_ty_val(count); // Attaches "<usize>: 0"
-    ///     }
-    ///     Ok(format!("Processing {} items", count))
-    /// }
-    /// ```
     #[must_use]
     fn attach_ty_val<A>(self, value: A) -> Self
     where
         Self: Sized,
-        A: Display,
+        KeyValue<Type<A>, A>: markers::ObjectMarkerFor<T> + fmt::Display + fmt::Debug,
     {
         self.attach_kv(ty!(A), value)
     }
 
     /// Attach a file system path to the error.
-    ///
-    /// This method attaches a file system path as a key-value pair where the key is "path"
-    /// and the value is the string representation of the path. This is commonly used for
-    /// file I/O operations to provide context about which file caused the error.
-    ///
-    /// **Note**: The path is converted to a string immediately when this method is called
-    /// (not lazily), so it's recommended to use this in `.map_err()` chains to avoid
-    /// unnecessary string conversions when no error occurs.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use rootcause_types::{AttachExt, ThinContext, Report, ResultIntoContext, FsError};
-    /// use std::path::Path;
-    ///
-    /// fn read_config_file<P: AsRef<Path>>(path: P) -> Result<String, Report<FsError>> {
-    ///     std::fs::read_to_string(&path)
-    ///         .into_ctx()
-    ///         .attach_path(path) // Attaches "path: /etc/config.toml"
-    /// }
-    /// ```
     #[must_use]
     #[cfg(feature = "std")]
     fn attach_path<P: AsRef<Path>>(self, path: P) -> Self
     where
         Self: Sized,
+        KeyValue<&'static str, String>: markers::ObjectMarkerFor<T>,
     {
         let path = path.as_ref().display().to_string();
         self.attach_kv("path", path)
     }
 }
 
-impl<C: ?Sized> AttachExt for Report<C, markers::Mutable, markers::SendSync> {
+impl<C: ?Sized, T> AttachExt<T> for Report<C, markers::Mutable, T> {
     #[inline]
     #[track_caller]
     fn attach_kv<K, V>(self, key: K, value: V) -> Self
     where
-        K: Display,
-        V: Display,
+        KeyValue<K, V>: markers::ObjectMarkerFor<T> + fmt::Display + fmt::Debug,
     {
         self.attach(KeyValue(key, value))
     }
@@ -677,10 +567,10 @@ impl<C: ?Sized> AttachExt for Report<C, markers::Mutable, markers::SendSync> {
     #[track_caller]
     fn attach_kv_dbg<K, V>(self, key: K, value: V) -> Self
     where
-        K: Display,
         V: Debug,
+        KeyValue<K, Dbg<V>>: markers::ObjectMarkerFor<T> + fmt::Display + fmt::Debug,
     {
-        self.attach(KeyValue::dbg(key, value))
+        self.attach(KeyValue(key, Dbg(value)))
     }
 
     #[inline]
@@ -688,6 +578,7 @@ impl<C: ?Sized> AttachExt for Report<C, markers::Mutable, markers::SendSync> {
     fn attach_field_status<S>(self, name: &'static str, status: S) -> Self
     where
         S: Display,
+        Field<&'static str, S>: markers::ObjectMarkerFor<T>,
     {
         self.attach(Field::new(name, status))
     }
@@ -696,19 +587,18 @@ impl<C: ?Sized> AttachExt for Report<C, markers::Mutable, markers::SendSync> {
     #[track_caller]
     fn attach_dbg<A>(self, value: A) -> Self
     where
-        A: Debug,
+        A: markers::ObjectMarkerFor<T> + fmt::Debug,
     {
         self.attach_custom::<handlers::DebugFmt, _>(value)
     }
 }
 
-impl<T, C: ?Sized> AttachExt for Result<T, Report<C, markers::Mutable, markers::SendSync>> {
+impl<V, C: ?Sized, T> AttachExt<T> for Result<V, Report<C, markers::Mutable, T>> {
     #[inline]
     #[track_caller]
-    fn attach_kv<K, V>(self, key: K, value: V) -> Self
+    fn attach_kv<K, Vv>(self, key: K, value: Vv) -> Self
     where
-        K: Display,
-        V: Display,
+        KeyValue<K, Vv>: markers::ObjectMarkerFor<T> + fmt::Display + fmt::Debug,
     {
         match self {
             Ok(ok) => Ok(ok),
@@ -718,14 +608,14 @@ impl<T, C: ?Sized> AttachExt for Result<T, Report<C, markers::Mutable, markers::
 
     #[inline]
     #[track_caller]
-    fn attach_kv_dbg<K, V>(self, key: K, value: V) -> Self
+    fn attach_kv_dbg<K, Vv>(self, key: K, value: Vv) -> Self
     where
-        K: Display,
-        V: Debug,
+        Vv: Debug,
+        KeyValue<K, Dbg<Vv>>: markers::ObjectMarkerFor<T> + fmt::Display + fmt::Debug,
     {
         match self {
             Ok(ok) => Ok(ok),
-            Err(report) => Err(report.attach(KeyValue::dbg(key, value))),
+            Err(report) => Err(report.attach(KeyValue(key, Dbg(value)))),
         }
     }
 
@@ -734,6 +624,7 @@ impl<T, C: ?Sized> AttachExt for Result<T, Report<C, markers::Mutable, markers::
     fn attach_field_status<S>(self, name: &'static str, status: S) -> Self
     where
         S: Display,
+        Field<&'static str, S>: markers::ObjectMarkerFor<T>,
     {
         match self {
             Ok(ok) => Ok(ok),
@@ -745,7 +636,7 @@ impl<T, C: ?Sized> AttachExt for Result<T, Report<C, markers::Mutable, markers::
     #[track_caller]
     fn attach_dbg<A>(self, value: A) -> Self
     where
-        A: Debug,
+        A: markers::ObjectMarkerFor<T> + fmt::Debug,
     {
         match self {
             Ok(ok) => Ok(ok),
@@ -756,25 +647,22 @@ impl<T, C: ?Sized> AttachExt for Result<T, Report<C, markers::Mutable, markers::
 
 /// Extension trait for lazily attaching a value to a [`Report`].
 ///
-/// This mirrors the old `error-stack` `Report::attach_with` and is deliberately
-/// kept separate from [`AttachExt`] so it does not collide with
-/// [`ResultExt::attach_with`] on
-/// `Result` values.
-pub trait ReportAttachExt: Sized {
+/// Like [`AttachExt`], this is generic over the report's thread-safety marker.
+pub trait ReportAttachExt<T>: Sized {
     /// Attach the value produced by `attachment`, evaluated lazily.
     #[must_use]
     fn attach_with<A, F>(self, attachment: F) -> Self
     where
-        A: Display,
+        A: markers::ObjectMarkerFor<T> + fmt::Display + fmt::Debug,
         F: FnOnce() -> A;
 }
 
-impl<C: ?Sized> ReportAttachExt for Report<C, markers::Mutable, markers::SendSync> {
+impl<C: ?Sized, T> ReportAttachExt<T> for Report<C, markers::Mutable, T> {
     #[inline]
     #[track_caller]
     fn attach_with<A, F>(self, attachment: F) -> Self
     where
-        A: Display,
+        A: markers::ObjectMarkerFor<T> + fmt::Display + fmt::Debug,
         F: FnOnce() -> A,
     {
         self.attach(attachment())
@@ -900,8 +788,7 @@ where
     /// Convert `None` into a `NotFound` error with key-value context.
     fn expect_kv<K, V>(self, key: K, value: V) -> Result<T, Report<NotFound>>
     where
-        K: Display,
-        V: Display;
+        KeyValue<K, V>: markers::ObjectMarkerFor<markers::SendSync> + fmt::Display + fmt::Debug;
     /// Convert `None` into a `NotFound` error for a missing field.
     fn expect_field(self, field: &'static str) -> Result<T, Report<NotFound>>;
 
@@ -910,8 +797,9 @@ where
     #[track_caller]
     fn expect_kv_dbg<K, V>(self, key: K, value: V) -> Result<T, Report<NotFound>>
     where
-        K: Display,
         V: Debug,
+        KeyValue<K, Dbg<V>>:
+            markers::ObjectMarkerFor<markers::SendSync> + fmt::Display + fmt::Debug,
     {
         self.expect_kv(key, Dbg(value))
     }
@@ -919,17 +807,22 @@ where
     /// Convert `None` into a `NotFound` error for a missing indexed item.
     #[inline]
     #[track_caller]
-    fn expect_by<K: Display>(self, key: K) -> Result<T, Report<NotFound>> {
-        self.expect_kv(Index(key), Type::<T>::of())
+    fn expect_by<K: fmt::Display>(self, key: K) -> Result<T, Report<NotFound>>
+    where
+        KeyValue<Index<K>, Type<T>>:
+            markers::ObjectMarkerFor<markers::SendSync> + fmt::Display + fmt::Debug,
+    {
+        self.expect_kv(Index(key), Type::of::<T>())
     }
 
     /// Convert `None` into a `NotFound` error with a lazily-computed index key.
     #[inline]
     #[track_caller]
-    fn expect_with<F, K>(self, key_fn: F) -> Result<T, Report<NotFound>>
+    fn expect_with<F, K: fmt::Display>(self, key_fn: F) -> Result<T, Report<NotFound>>
     where
-        K: Display,
         F: FnOnce() -> K,
+        KeyValue<Index<K>, Type<T>>:
+            markers::ObjectMarkerFor<markers::SendSync> + fmt::Display + fmt::Debug,
     {
         self.expect_kv(Index(key_fn()), Type::of::<T>())
     }
@@ -940,8 +833,7 @@ impl<T> OptionReport<T> for Option<T> {
     #[track_caller]
     fn expect_kv<K, V>(self, key: K, value: V) -> Result<T, Report<NotFound>>
     where
-        K: Display,
-        V: Display,
+        KeyValue<K, V>: markers::ObjectMarkerFor<markers::SendSync> + fmt::Display + fmt::Debug,
     {
         match self {
             Some(v) => Ok(v),
@@ -1353,7 +1245,7 @@ mod test {
 
     #[test]
     fn expect_by() {
-        let arr = ["a", "b"];
+        let arr: &'static [&'static str] = &["a", "b"];
         let get_oob = arr.get(2).expect_by(2);
         assert_err!(get_oob);
     }

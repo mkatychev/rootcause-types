@@ -1,16 +1,18 @@
 use derive_more as dm;
 
 #[cfg(not(feature = "std"))]
-use core::time::Duration;
+use core::{fmt, time::Duration};
 #[cfg(feature = "std")]
-use std::{path::Path, time::Duration};
+use std::{fmt, path::Path, time::Duration};
 
 #[cfg(not(feature = "std"))]
 use alloc::format;
 
+use rootcause::markers;
+
 use crate::{
-    Index, Report, ThinContext,
-    attachment::{self, Display, FromTo, Type, Unsupported, simple_type_name},
+    Index, KeyValue, Report, ThinContext,
+    attachment::{self, FromTo, Type, Unsupported, simple_type_name},
     new_report, report, ty,
 };
 
@@ -260,8 +262,12 @@ impl NotFound {
     ///
     /// This method creates a `NotFound` report indicating that an item
     /// at a specific index or key could not be found.
-    pub fn with_index<T, K: Display>(key: K) -> Report<Self> {
-        Self::attach_kv(Index(key), Type::<T>::of())
+    pub fn with_index<T, K: fmt::Display>(key: K) -> Report<Self>
+    where
+        KeyValue<Index<K>, Type<T>>:
+            markers::ObjectMarkerFor<markers::SendSync> + fmt::Display + fmt::Debug,
+    {
+        Self::attach_kv(Index(key), Type::of::<T>())
     }
 }
 

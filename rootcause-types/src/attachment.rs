@@ -13,19 +13,21 @@ use derive_more as dm;
 
 /// Trait alias for types that can be displayed and used in error attachments.
 ///
-/// This trait combines `Display`, `Debug`, `Send`, `Sync`, and `'static` bounds
-/// for types that can be attached to error reports.
-pub trait Display: fmt::Display + fmt::Debug + Send + Sync + 'static {}
+/// This trait combines `Display`, `Debug`, and `'static` bounds. Thread-safety
+/// (`Send + Sync`) is deliberately **not** required here: it is deferred to the
+/// report's thread-safety marker via [`rootcause::markers::ObjectMarkerFor`],
+/// so non-`Send + Sync` types can still be attached to `Local` reports.
+pub trait Display: fmt::Display + fmt::Debug + 'static {}
 
-impl<A> Display for A where A: fmt::Display + fmt::Debug + Send + Sync + 'static {}
+impl<A> Display for A where A: fmt::Display + fmt::Debug + 'static {}
 
 /// Trait alias for types that can be debug-formatted and used in error attachments.
 ///
-/// This trait combines `Debug`, `Send`, `Sync`, and `'static` bounds for types
-/// that can be debug-formatted in error reports.
-pub trait Debug: fmt::Debug + Send + Sync + 'static {}
+/// Like [`Display`], only `Debug` and `'static` are required; thread-safety is
+/// deferred to the report's thread-safety marker.
+pub trait Debug: fmt::Debug + 'static {}
 
-impl<A> Debug for A where A: fmt::Debug + Send + Sync + 'static {}
+impl<A> Debug for A where A: fmt::Debug + 'static {}
 
 /// Wrapper for types that only implement `Debug` to make them displayable.
 ///
@@ -172,19 +174,20 @@ impl<Id: Display, S: Display> Field<Id, S> {
 #[derive(PartialEq, Eq)]
 pub struct Type<T = &'static str>(PhantomData<fn() -> T>);
 
-impl<T> Type<T> {
+impl Type<&'static str> {
     /// Create a type attachment that renders the fully-qualified type name of
-    /// `T`, matching [`core::any::type_name`].
+    /// `U`, matching [`core::any::type_name`].
     #[must_use]
-    pub fn of() -> Self {
+    pub fn of<U>() -> Type<U> {
         Type(PhantomData)
     }
 
     /// Alias for [`Type::of`].
     #[must_use]
-    pub fn any() -> Self {
+    pub fn any<U>() -> Type<U> {
         Type(PhantomData)
     }
+
     /// Create a type attachment for the type of the given value.
     pub fn of_val<U>(_val: &U) -> Type<U> {
         Type(PhantomData)
@@ -224,21 +227,19 @@ impl<T> ops::Deref for Type<T> {
 /// use std::path::PathBuf;
 /// use rootcause_types::SimpleType;
 ///
-/// let ty = SimpleType::<PathBuf>::of();
+/// let ty = SimpleType::of::<PathBuf>();
 /// assert_eq!(format!("{ty}"), "<PathBuf>");
 /// ```
 #[derive(PartialEq, Eq)]
 pub struct SimpleType<T = &'static str>(PhantomData<fn() -> T>);
 
-impl<T> SimpleType<T> {
-    /// Create a `SimpleType` marker for the type `T`.
+impl SimpleType<&'static str> {
+    /// Create a `SimpleType` marker for the type `U`.
     #[must_use]
-    pub fn of() -> Self {
+    pub fn of<U>() -> SimpleType<U> {
         SimpleType(PhantomData)
     }
-}
 
-impl SimpleType<&'static str> {
     /// Create a `SimpleType` marker for the type of the given value.
     pub fn of_val<U>(_val: &U) -> SimpleType<U> {
         SimpleType(PhantomData)
@@ -290,10 +291,10 @@ impl<T> ops::Deref for SimpleType<T> {
 #[macro_export]
 macro_rules! ty {
     ($type:ty) => {
-        $crate::Type::<$type>::of()
+        $crate::Type::of::<$type>()
     };
     (full: $type:ty) => {
-        $crate::Type::<$type>::any()
+        $crate::Type::any::<$type>()
     };
 }
 
