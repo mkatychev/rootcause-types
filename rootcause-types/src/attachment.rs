@@ -4,10 +4,7 @@ use core::{any, fmt, marker::PhantomData, ops, time::Duration};
 use std::{any, fmt, marker::PhantomData, ops, time::Duration};
 
 #[cfg(not(feature = "std"))]
-use alloc::{
-    format,
-    string::{String, ToString},
-};
+use alloc::{format, string::String};
 
 use derive_more as dm;
 
@@ -423,8 +420,12 @@ impl ops::Deref for DisplayDuration {
 /// - Zero duration: "ZERO"
 #[must_use]
 pub fn hms_string(duration: Duration) -> String {
+    #[cfg(not(feature = "std"))]
+    use alloc::borrow::ToOwned;
+    #[cfg(all(test, feature = "std"))]
+    use std::borrow::ToOwned;
     if duration.is_zero() {
-        return "ZERO".to_string();
+        return "ZERO".to_owned();
     }
     let s = duration.as_secs();
     let ms = duration.subsec_millis();

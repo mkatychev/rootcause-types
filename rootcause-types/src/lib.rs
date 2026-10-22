@@ -121,15 +121,6 @@ use attachment::{Dbg, Debug, Display};
 /// Re-export of all error context types.
 pub use context::*;
 
-/// Create a [`Report`] for a known `Send + Sync` context.
-#[inline]
-fn new_report<C>(ctx: C) -> Report<C>
-where
-    C: markers::ObjectMarkerFor<markers::SendSync> + core::error::Error,
-{
-    Report::<C, markers::Mutable, markers::SendSync>::new(ctx)
-}
-
 /// A trait for zero-sized error types that provides convenient error creation methods.
 ///
 /// `ThinContext` extends the functionality of [`rootcause::Report`] by providing
@@ -162,7 +153,7 @@ where
     where
         C: markers::ObjectMarkerFor<markers::SendSync> + core::error::Error,
     {
-        new_report(ctx).context(Self::VALUE)
+        Report::<C>::new(ctx).context(Self::VALUE)
     }
 
     /// Create an error report with an attachment computed by a closure.
@@ -173,7 +164,7 @@ where
     where
         A: markers::ObjectMarkerFor<markers::SendSync> + fmt::Display + fmt::Debug,
     {
-        new_report(Self::VALUE).attach(attachment())
+        Report::<Self>::new(Self::VALUE).attach(attachment())
     }
 
     /// Create an error report with a displayable attachment.
@@ -182,7 +173,7 @@ where
     where
         A: markers::ObjectMarkerFor<markers::SendSync> + fmt::Display + fmt::Debug,
     {
-        new_report(Self::VALUE).attach(value)
+        Report::<Self>::new(Self::VALUE).attach(value)
     }
     /// Create an error report with a debug-formatted attachment.
     ///
@@ -192,7 +183,7 @@ where
     where
         A: markers::ObjectMarkerFor<markers::SendSync> + fmt::Debug,
     {
-        new_report(Self::VALUE).attach_custom::<handlers::DebugFmt, _>(value)
+        Report::<Self>::new(Self::VALUE).attach_custom::<handlers::DebugFmt, _>(value)
     }
     /// Create an error report with a key-value pair attachment.
     #[track_caller]
@@ -200,7 +191,7 @@ where
     where
         KeyValue<K, V>: markers::ObjectMarkerFor<markers::SendSync> + fmt::Display + fmt::Debug,
     {
-        new_report(Self::VALUE).attach(KeyValue(key, value))
+        Report::<Self>::new(Self::VALUE).attach(KeyValue(key, value))
     }
     /// Create an error report with a key-value pair where the value is debug-formatted.
     #[track_caller]
@@ -210,7 +201,7 @@ where
         KeyValue<K, Dbg<V>>:
             markers::ObjectMarkerFor<markers::SendSync> + fmt::Display + fmt::Debug,
     {
-        new_report(Self::VALUE).attach(KeyValue(key, Dbg(value)))
+        Report::<Self>::new(Self::VALUE).attach(KeyValue(key, Dbg(value)))
     }
     /// Create an error report with a field attachment.
     ///
@@ -221,7 +212,7 @@ where
         S: Display,
         Field<&'static str, S>: markers::ObjectMarkerFor<markers::SendSync>,
     {
-        new_report(Self::VALUE).attach(Field::new(key, status))
+        Report::<Self>::new(Self::VALUE).attach(Field::new(key, status))
     }
 
     /// Create an error report showing expected vs actual values.
@@ -234,7 +225,7 @@ where
         A: Display,
         Expectation<A, A>: markers::ObjectMarkerFor<markers::SendSync>,
     {
-        new_report(Self::VALUE).attach(Expectation { expected, actual })
+        Report::<Self>::new(Self::VALUE).attach(Expectation { expected, actual })
     }
 
     /// Create an error report with a type-value pair attachment.
@@ -246,7 +237,7 @@ where
         KeyValue<Type<A>, A>:
             markers::ObjectMarkerFor<markers::SendSync> + fmt::Display + fmt::Debug,
     {
-        new_report(Self::VALUE).attach(KeyValue(ty!(A), value))
+        Report::<Self>::new(Self::VALUE).attach(KeyValue(ty!(A), value))
     }
 
     /// Create an error report with a type-value pair where the value is debug-formatted.
@@ -257,7 +248,7 @@ where
         KeyValue<Type<A>, Dbg<A>>:
             markers::ObjectMarkerFor<markers::SendSync> + fmt::Display + fmt::Debug,
     {
-        new_report(Self::VALUE).attach(KeyValue(ty!(A), Dbg(value)))
+        Report::<Self>::new(Self::VALUE).attach(KeyValue(ty!(A), Dbg(value)))
     }
 
     /// Create an error report with just a type attachment.
@@ -266,13 +257,13 @@ where
     where
         Type<A>: markers::ObjectMarkerFor<markers::SendSync>,
     {
-        new_report(Self::VALUE).attach(ty!(A))
+        Report::<Self>::new(Self::VALUE).attach(ty!(A))
     }
 
     /// Create an error report with a type as field name and status.
     #[track_caller]
     fn attach_ty_status<A: 'static>(status: impl Display + Send + Sync) -> Report<Self> {
-        new_report(Self::VALUE).attach(Field::new(ty!(A), status))
+        Report::<Self>::new(Self::VALUE).attach(Field::new(ty!(A), status))
     }
 }
 

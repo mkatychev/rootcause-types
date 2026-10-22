@@ -13,7 +13,7 @@ use rootcause::markers;
 use crate::{
     Index, KeyValue, Report, ThinContext,
     attachment::{self, FromTo, Type, Unsupported, simple_type_name},
-    new_report, report, ty,
+    report, ty,
 };
 
 #[cfg(feature = "std")]
@@ -188,7 +188,7 @@ impl FsError {
     #[track_caller]
     pub fn with_path(path: impl AsRef<Path>) -> Report<Self> {
         let path = path.as_ref().display().to_string();
-        new_report(Self).attach_kv("path", path)
+        Report::<Self>::new(Self).attach_kv("path", path)
     }
 }
 
@@ -201,7 +201,7 @@ impl InvalidInput {
     #[track_caller]
     pub fn with_path(path: impl AsRef<Path>) -> Report<Self> {
         let path = path.as_ref().display().to_string();
-        new_report(Self).attach_kv("path", path)
+        Report::<Self>::new(Self).attach_kv("path", path)
     }
 
     /// Create an invalid input error with type information.
@@ -211,7 +211,7 @@ impl InvalidInput {
     #[track_caller]
     pub fn type_name<T: ?Sized>() -> Report<Self> {
         let type_name = simple_type_name::<T>();
-        new_report(Self).attach(format!("type: {type_name}"))
+        Report::<Self>::new(Self).attach(format!("type: {type_name}"))
     }
 
     /// Create an invalid input error for unsupported operations.
@@ -220,7 +220,7 @@ impl InvalidInput {
     /// the requested operation is not supported.
     #[track_caller]
     pub fn unsupported() -> Report<Self> {
-        new_report(Self).attach(Unsupported)
+        Report::<Self>::new(Self).attach(Unsupported)
     }
 }
 
@@ -231,7 +231,7 @@ impl ConversionError {
     /// and target types of the failed conversion.
     #[track_caller]
     pub fn new<F: 'static, T: 'static>() -> Report<Self> {
-        new_report(Self).attach(FromTo(ty!(F), ty!(T)))
+        Report::<Self>::new(Self).attach(FromTo(ty!(F), ty!(T)))
     }
 
     /// Create a conversion error from an existing context with type information.
@@ -255,7 +255,7 @@ impl NotFound {
     /// field is missing from a data structure.
     #[track_caller]
     pub fn with_field(field: &'static str) -> Report<Self> {
-        new_report(Self).attach(Field::new(field, attachment::Missing))
+        Report::<Self>::new(Self).attach(Field::new(field, attachment::Missing))
     }
 
     /// Create a not found error for a missing indexed item.
@@ -278,6 +278,6 @@ impl ParseError {
     /// field could not be parsed correctly.
     #[track_caller]
     pub fn with_field(field: &'static str) -> Report<Self> {
-        new_report(Self).attach(Field::new(field, attachment::Invalid))
+        Report::<Self>::new(Self).attach(Field::new(field, attachment::Invalid))
     }
 }
