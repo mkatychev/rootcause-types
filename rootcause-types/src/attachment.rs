@@ -170,68 +170,41 @@ impl<Id: Display, S: Display> Field<Id, S> {
 /// always `Send + Sync` regardless of their return type, so a `Type<T>` stays
 /// `Send + Sync` even when `T` itself is neither `Send` nor `Sync`.
 #[derive(PartialEq, Eq)]
-pub struct Type<T = &'static str> {
-    /// The display name of the referenced type.
-    name: &'static str,
-    _marker: PhantomData<fn() -> T>,
-}
+pub struct Type<T = &'static str>(PhantomData<fn() -> T>);
 
 impl<T> Type<T> {
-    /// Build a `Type` from a pre-computed type name.
-    const fn new(name: &'static str) -> Self {
-        Self {
-            name,
-            _marker: PhantomData,
-        }
-    }
-}
-
-impl Type<&'static str> {
-    /// Create a type attachment for the given type.
-    ///
-    /// This will be a const fn when `type_name` becomes const fn in stable Rust.
+    /// Create a type attachment that renders the fully-qualified type name of
+    /// `T`, matching [`core::any::type_name`].
     #[must_use]
-    pub fn of<U>() -> Type<U> {
-        Type::<U>::new(any::type_name::<U>())
+    pub fn of() -> Self {
+        Type(PhantomData)
     }
 
-    /// Create a type attachment using the fully-qualified type name.
+    /// Alias for [`Type::of`].
     #[must_use]
-    pub fn any<U>() -> Type<U> {
-        Type::<U>::new(any::type_name::<U>())
+    pub fn any() -> Self {
+        Type(PhantomData)
     }
-
     /// Create a type attachment for the type of the given value.
     pub fn of_val<U>(_val: &U) -> Type<U> {
-        Type::<U>::new(any::type_name::<U>())
+        Type(PhantomData)
     }
 
-    /// Create a type attachment with a fully qualified name from the type of the given value.
+    /// Alias for [`Type::of_val`].
     pub fn any_val<U>(_val: &U) -> Type<U> {
-        Type::<U>::new(any::type_name::<U>())
-    }
-
-    /// Create a `Type` that holds only the fully-qualified type name of `T`,
-    /// without carrying the type `T` itself.
-    ///
-    /// Unlike [`Type::of`], this accepts non-`'static` (and `!Sized`) types,
-    /// at the cost of erasing `T`'s identity from the marker. The result is a
-    /// plain `Type<&'static str>` that renders identically to [`Type::of`].
-    #[must_use]
-    pub fn name_of<T: ?Sized>() -> Type<&'static str> {
-        Type::<&'static str>::new(any::type_name::<T>())
+        Type(PhantomData)
     }
 }
 
 impl<T> fmt::Display for Type<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "<{}>", self.name)
+        write!(f, "<{}>", any::type_name::<T>())
     }
 }
 
 impl<T> fmt::Debug for Type<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("Type").field(&self.name).finish()
+        f.debug_tuple("Type").field(&any::type_name::<T>()).finish()
     }
 }
 
@@ -239,7 +212,7 @@ impl<T> ops::Deref for Type<T> {
     type Target = str;
 
     fn deref(&self) -> &Self::Target {
-        self.name
+        any::type_name::<T>()
     }
 }
 
@@ -251,19 +224,21 @@ impl<T> ops::Deref for Type<T> {
 /// use std::path::PathBuf;
 /// use rootcause_types::SimpleType;
 ///
-/// let ty = SimpleType::of::<PathBuf>();
+/// let ty = SimpleType::<PathBuf>::of();
 /// assert_eq!(format!("{ty}"), "<PathBuf>");
 /// ```
 #[derive(PartialEq, Eq)]
 pub struct SimpleType<T = &'static str>(PhantomData<fn() -> T>);
 
-impl SimpleType<&'static str> {
-    /// Create a `SimpleType` marker for the given type.
+impl<T> SimpleType<T> {
+    /// Create a `SimpleType` marker for the type `T`.
     #[must_use]
-    pub fn of<U>() -> SimpleType<U> {
+    pub fn of() -> Self {
         SimpleType(PhantomData)
     }
+}
 
+impl SimpleType<&'static str> {
     /// Create a `SimpleType` marker for the type of the given value.
     pub fn of_val<U>(_val: &U) -> SimpleType<U> {
         SimpleType(PhantomData)
@@ -315,10 +290,10 @@ impl<T> ops::Deref for SimpleType<T> {
 #[macro_export]
 macro_rules! ty {
     ($type:ty) => {
-        $crate::Type::of::<$type>()
+        $crate::Type::<$type>::of()
     };
     (full: $type:ty) => {
-        $crate::Type::any::<$type>()
+        $crate::Type::<$type>::any()
     };
 }
 

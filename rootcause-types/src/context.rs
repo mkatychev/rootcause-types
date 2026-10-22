@@ -261,7 +261,7 @@ impl NotFound {
     /// This method creates a `NotFound` report indicating that an item
     /// at a specific index or key could not be found.
     pub fn with_index<T, K: Display>(key: K) -> Report<Self> {
-        Self::attach_kv(Index(key), Type::name_of::<T>())
+        Self::attach_kv(Index(key), Type::<T>::of())
     }
 }
 

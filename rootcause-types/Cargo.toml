@@ -8,7 +8,7 @@ documentation.workspace = true
 repository.workspace = true
 
 [features]
-default = ["std", "backtrace"]
+default = ["std"]
 std = ["tracing?/std"]
 backtrace = ["std", "dep:rootcause-backtrace"]
 tracing = ["dep:tracing"]

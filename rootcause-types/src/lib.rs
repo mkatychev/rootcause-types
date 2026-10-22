@@ -920,7 +920,7 @@ where
     #[inline]
     #[track_caller]
     fn expect_by<K: Display>(self, key: K) -> Result<T, Report<NotFound>> {
-        self.expect_kv(Index(key), Type::name_of::<T>())
+        self.expect_kv(Index(key), Type::<T>::of())
     }
 
     /// Convert `None` into a `NotFound` error with a lazily-computed index key.
@@ -931,7 +931,7 @@ where
         K: Display,
         F: FnOnce() -> K,
     {
-        self.expect_kv(Index(key_fn()), Type::name_of::<T>())
+        self.expect_kv(Index(key_fn()), Type::of::<T>())
     }
 }
 
