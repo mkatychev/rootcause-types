@@ -13,7 +13,8 @@
 //! # Quick Start
 //!
 //! ```rust
-//! use rootcause_types::{ThinContext, Report, expect_field, IntoContext, ResultIntoContext, NoneError};
+//! use rootcause::{Report, option_ext::NoneError};
+//! use rootcause_types::{ThinContext, expect_field, IntoContext, ResultIntoContext};
 //!
 //! // Define your error type
 //! #[derive(ThinContext)]
@@ -98,12 +99,8 @@ use tracing::{Level, debug, error, info, trace, warn};
 /// Derive macro for implementing [`ThinContext`] trait on zero-sized error types.
 pub use rootcause_types_derive::ThinContext;
 
-/// Re-export of rootcause's `Option` extension trait and error type.
-pub use rootcause::option_ext::{NoneError, OptionExt};
-/// Re-export of rootcause types and macros for convenience.
-pub use rootcause::{
-    self, IntoReport, IntoReportCollection, Report, bail, markers, prelude::ResultExt, report,
-};
+use rootcause::option_ext::NoneError;
+use rootcause::{IntoReportCollection, Report, markers, prelude::ResultExt, report};
 
 /// Error attachment types and utilities for adding context to error reports.
 pub mod attachment;
@@ -128,7 +125,8 @@ pub use context::*;
 /// # Example
 ///
 /// ```
-/// use rootcause_types::{ThinContext, Report};
+/// use rootcause::Report;
+/// use rootcause_types::ThinContext;
 ///
 /// #[derive(ThinContext)]
 /// pub struct MyError;
@@ -280,7 +278,8 @@ pub trait ReportAs<T> {
     /// # Example
     ///
     /// ```
-    /// use rootcause_types::{ReportAs, ThinContext, Report};
+    /// use rootcause::Report;
+    /// use rootcause_types::{ReportAs, ThinContext};
     ///
     /// #[derive(ThinContext)]
     /// struct MyError;
@@ -324,7 +323,8 @@ pub trait IntoContext {
     /// # Example
     ///
     /// ```
-    /// use rootcause_types::{IntoContext, ThinContext, Report, NoneError, ResultIntoContext, DbError, AttachExt, report};
+    /// use rootcause::{Report, option_ext::NoneError, report};
+    /// use rootcause_types::{IntoContext, ThinContext, ResultIntoContext, DbError, AttachExt};
     ///
     /// #[derive(ThinContext)]
     /// struct ServiceError;
@@ -370,7 +370,8 @@ pub trait ResultIntoContext<V, E>: ResultExt<V, E> {
     /// # Example
     ///
     /// ```
-    /// use rootcause_types::{ResultIntoContext, ThinContext, Report};
+    /// use rootcause::Report;
+    /// use rootcause_types::{ResultIntoContext, ThinContext};
     ///
     /// #[derive(ThinContext)]
     /// struct MyParseError;
@@ -393,9 +394,8 @@ pub trait ResultIntoContext<V, E>: ResultExt<V, E> {
     /// # Example
     ///
     /// ```
-    /// use rootcause_types::{
-    ///     DbError, NoneError, OptionExt, Report, ResultIntoContext, expect_field,
-    /// };
+    /// use rootcause::{Report, option_ext::{NoneError, OptionExt}};
+    /// use rootcause_types::{DbError, ResultIntoContext, expect_field};
     ///
     /// fn find_user(id: u64) -> Result<User, Report<DbError>> {
     ///     Some(User {
@@ -433,7 +433,8 @@ pub trait ResultIntoContext<V, E>: ResultExt<V, E> {
     ///
     /// ```
     /// use std::path::Path;
-    /// use rootcause_types::{ResultIntoContext, Report, FsError};
+    /// use rootcause::Report;
+    /// use rootcause_types::{ResultIntoContext, FsError};
     ///
     /// fn count_lines_in_file(path: &Path) -> Result<usize, Report<FsError>> {
     ///     std::fs::read_to_string(path)
@@ -929,7 +930,8 @@ macro_rules! __field {
 /// # Example
 ///
 /// ```
-/// use rootcause_types::{expect_field, NoneError, Report};
+/// use rootcause::{Report, option_ext::NoneError};
+/// use rootcause_types::expect_field;
 ///
 /// struct User {
 ///     email: Option<String>,
@@ -952,14 +954,11 @@ macro_rules! expect_field {
 
 /// Returns early with an error if the condition is not met.
 ///
-/// The error is converted via [`IntoReport`]: an already-constructed [`Report`]
-/// is returned unchanged, while an [`Error`] value is wrapped in a new report.
-/// This mirrors `error-stack`'s `ensure!`.
-///
 /// # Example
 ///
 /// ```
-/// use rootcause_types::{NoneError, Report, ensure};
+/// use rootcause::{Report, option_ext::NoneError};
+/// use rootcause_types::ensure;
 ///
 /// fn check(value: i32) -> Result<(), Report<NoneError>> {
 ///     ensure!(value > 0, NoneError::new::<i32>());
@@ -976,9 +975,9 @@ macro_rules! expect_field {
 macro_rules! ensure {
     ($cond:expr, $err:expr $(,)?) => {{
         if !($cond) {
-            return ::core::result::Result::Err(
-                $crate::IntoReport::<$crate::markers::SendSync>::into_report($err),
-            );
+            return ::core::result::Result::Err(::rootcause::IntoReport::<
+                ::rootcause::markers::SendSync,
+            >::into_report($err));
         }
     }};
 }
@@ -1027,6 +1026,7 @@ impl MyStruct {
 mod test {
 
     use crate::attachment::Invalid;
+    use rootcause::option_ext::OptionExt;
 
     use super::*;
 
