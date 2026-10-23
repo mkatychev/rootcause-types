@@ -8,10 +8,12 @@ use std::{path::Path, time::Duration};
 #[cfg(not(feature = "std"))]
 use alloc::format;
 
+use rootcause::report;
+
 use crate::{
     Report, ThinContext,
     attachment::{self, FromTo, Unsupported, simple_type_name},
-    report, ty,
+    ty,
 };
 
 #[cfg(feature = "std")]

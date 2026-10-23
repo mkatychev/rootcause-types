@@ -12,8 +12,9 @@ use rootcause::handlers::{
     ContextFormattingStyle, ContextHandler, FormattingFunction,
 };
 
-/// Re-export of the location attachment and handler shipped with `rootcause`.
-pub use rootcause::hooks::builtin_hooks::location::{Location, LocationHandler};
+/// Location attachment and handler shipped with `rootcause`, used by
+/// [`IntoContext`](crate::IntoContext).
+pub(crate) use rootcause::hooks::builtin_hooks::location::{Location, LocationHandler};
 
 /// Context handler that renders a context together with its
 /// [`core::error::Error::source`] chain.

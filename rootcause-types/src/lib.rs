@@ -99,8 +99,8 @@ use tracing::{Level, debug, error, info, trace, warn};
 /// Derive macro for implementing [`ThinContext`] trait on zero-sized error types.
 pub use rootcause_types_derive::ThinContext;
 
-use rootcause::option_ext::NoneError;
-use rootcause::{IntoReportCollection, Report, markers, prelude::ResultExt, report};
+use rootcause::option_ext::{NoneError, OptionExt};
+use rootcause::{IntoReportCollection, Report, markers, prelude::ResultExt};
 
 /// Error attachment types and utilities for adding context to error reports.
 pub mod attachment;
@@ -825,21 +825,15 @@ impl<T> OptionReport<T> for Option<T> {
     where
         KeyValue<K, V>: markers::ObjectMarkerFor<markers::SendSync> + fmt::Display + fmt::Debug,
     {
-        match self {
-            Some(v) => Ok(v),
-            None => Err(report!(NoneError::new::<T>()).attach_kv(key, value)),
-        }
+        self.ok_or_report()
+            .map_err(|error| error.attach_kv(key, value))
     }
 
     #[inline]
     #[track_caller]
     fn expect_field(self, field: &'static str) -> Result<T, Report<NoneError>> {
-        match self {
-            Some(v) => Ok(v),
-            None => {
-                Err(report!(NoneError::new::<T>()).attach(Field::new(field, attachment::Missing)))
-            }
-        }
+        self.ok_or_report()
+            .map_err(|error| error.attach(Field::new(field, attachment::Missing)))
     }
 }
 
