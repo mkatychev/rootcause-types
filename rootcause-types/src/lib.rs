@@ -85,7 +85,6 @@
 #[cfg(not(feature = "std"))]
 extern crate alloc;
 
-use core::any;
 
 #[cfg(not(feature = "std"))]
 use core::fmt;
@@ -260,56 +259,6 @@ where
     #[track_caller]
     fn attach_ty_status<A: 'static>(status: impl Display + Send + Sync) -> Report<Self> {
         Report::<Self>::new(Self::VALUE).attach(Field::new(ty!(A), status))
-    }
-}
-
-/// Trait for converting `Result<T, E>` into `Result<T, Report<C>>` with automatic error wrapping.
-///
-/// This trait extends the functionality of [`ResultExt`]
-/// by allowing implicit conversion from any error type to a specific context type with enhanced
-/// error reporting that includes source chain information.
-pub trait ReportAs<T> {
-    /// Convert this result into a report with the specified context type.
-    ///
-    /// This method automatically converts any `Result<T, E>` where `E` implements
-    /// `Error` into a `Result<T, Report<C>>` where `C` is your desired
-    /// context type.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use rootcause::Report;
-    /// use rootcause_types::{ReportAs, ThinContext};
-    ///
-    /// #[derive(ThinContext)]
-    /// struct MyError;
-    ///
-    /// fn parse_number(s: &str) -> Result<i32, Report<MyError>> {
-    ///     s.parse().report_as() // Converts ParseIntError automatically
-    /// }
-    ///
-    /// // Error includes original ParseIntError details + type information
-    /// let result = parse_number("not_a_number");
-    /// assert!(result.is_err());
-    /// ```
-    fn report_as<C: ThinContext>(self) -> Result<T, Report<C>>;
-}
-
-impl<T, E: core::error::Error + Send + Sync + 'static> ReportAs<T> for Result<T, E> {
-    #[inline]
-    #[track_caller]
-    fn report_as<C: ThinContext>(self) -> Result<T, Report<C>> {
-        match self {
-            Ok(v) => Ok(v),
-            Err(e) => {
-                let ty = any::type_name_of_val(&e);
-                // `SourceChain` makes the report formatter walk `Error::source`,
-                // replacing the manual chain-collection this used to do.
-                let report: Report<E, markers::Mutable, markers::SendSync> =
-                    Report::new_custom::<handlers::SourceChain>(e);
-                Err(report.attach(ty).into_ctx())
-            }
-        }
     }
 }
 
@@ -917,15 +866,6 @@ mod test {
                 println!("\n{:?}", result.unwrap_err());
             }
         };
-    }
-
-    #[test]
-    fn report_as() {
-        fn output() -> Result<usize, Report<MyError>> {
-            "NaN".parse::<usize>().report_as()
-        }
-
-        assert_err!(output());
     }
     #[test]
     fn reportable() {
