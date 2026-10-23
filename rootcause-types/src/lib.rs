@@ -360,6 +360,14 @@ impl<C: ?Sized + 'static> IntoContext for Report<C> {
     }
 }
 
+impl IntoContext for Box<dyn core::error::Error + Send + Sync> {
+    #[inline]
+    #[track_caller]
+    fn into_ctx<C2: ThinContext>(self) -> Report<C2> {
+        rootcause::compat::IntoRootcause::into_rootcause(self).context(C2::VALUE)
+    }
+}
+
 /// Extension trait for `Result<T, E>` that provides context conversion methods.
 pub trait ResultIntoContext<V, E>: ResultExt<V, E> {
     /// Convert the error context type of this result.
@@ -948,35 +956,37 @@ macro_rules! expect_field {
     };
 }
 
-/// Returns early from the enclosing function with an error if the condition is not met.
+/// Returns early with an error if the condition is not met.
 ///
-/// `rootcause` provides [`bail!`] but no `ensure!`, so this mirrors the behaviour of
-/// `error-stack`'s `ensure!` on top of [`bail!`].
+/// The error is converted via [`IntoReport`]: an already-constructed [`Report`]
+/// is returned unchanged, while an [`Error`] value is wrapped in a new report.
+/// This mirrors `error-stack`'s `ensure!`.
 ///
 /// # Example
 ///
 /// ```
-/// use rootcause_types::{ensure, Report};
+/// use rootcause_types::{NotFound, Report, ensure};
 ///
-/// fn check(value: i32) -> Result<(), Report> {
-///     ensure!(value > 0, "value must be positive, got {}", value);
+/// fn check(value: i32) -> Result<(), Report<NotFound>> {
+///     ensure!(value > 0, NotFound);
 ///     Ok(())
 /// }
 ///
 /// assert!(check(-1).is_err());
+/// assert!(check(1).is_ok());
 /// ```
+///
+/// [`Report`]: rootcause::Report
+/// [`Error`]: core::error::Error
 #[macro_export]
 macro_rules! ensure {
-    ($cond:expr $(,)?) => {
+    ($cond:expr, $err:expr $(,)?) => {{
         if !($cond) {
-            $crate::bail!(concat!("Condition failed: `", stringify!($cond), "`"));
+            return ::core::result::Result::Err(
+                $crate::IntoReport::<$crate::markers::SendSync>::into_report($err),
+            );
         }
-    };
-    ($cond:expr, $($args:tt)+) => {
-        if !($cond) {
-            $crate::bail!($($args)+);
-        }
-    };
+    }};
 }
 
 /// Install the `rootcause_types` default hooks: colored unicode report formatting and,
@@ -1149,6 +1159,15 @@ mod test {
             result.map_err(IntoContext::into_ctx)
         }
 
+        assert_err!(output());
+    }
+
+    #[test]
+    fn boxed_dyn_error_into_ctx() {
+        fn output() -> Result<usize, Report<MyError>> {
+            let boxed: Box<dyn core::error::Error + Send + Sync> = Box::new(core::fmt::Error);
+            Err(boxed.into_ctx())
+        }
         assert_err!(output());
     }
 
