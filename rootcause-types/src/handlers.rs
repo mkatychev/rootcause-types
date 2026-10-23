@@ -7,42 +7,11 @@
 
 use core::fmt;
 
-use rootcause::handlers::{
-    AttachmentFormattingPlacement, AttachmentFormattingStyle, AttachmentHandler, FormattingFunction,
-};
+use rootcause::handlers::{AttachmentFormattingStyle, AttachmentHandler, FormattingFunction};
 
 /// Location attachment and handler shipped with `rootcause`, used by
 /// [`IntoContext`](crate::IntoContext).
 pub(crate) use rootcause::hooks::builtin_hooks::location::{Location, LocationHandler};
-
-/// Attachment handler that hides its attachment entirely.
-///
-/// This is the closest analogue to `error-stack`'s `attach_opaque`: the value is
-/// retained on the report (so it can be inspected programmatically) but never
-/// rendered.
-#[derive(Debug, Copy, Clone)]
-pub struct Opaque;
-
-impl<A> AttachmentHandler<A> for Opaque {
-    fn display(_value: &A, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "An object of type {}", core::any::type_name::<A>())
-    }
-
-    fn debug(_value: &A, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "An object of type {}", core::any::type_name::<A>())
-    }
-
-    fn preferred_formatting_style(
-        _value: &A,
-        _report_formatting_function: FormattingFunction,
-    ) -> AttachmentFormattingStyle {
-        AttachmentFormattingStyle {
-            placement: AttachmentFormattingPlacement::Hidden,
-            function: FormattingFunction::Display,
-            priority: 0,
-        }
-    }
-}
 
 /// Attachment handler that always formats its attachment using [`Debug`].
 ///
