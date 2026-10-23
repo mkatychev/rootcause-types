@@ -1,18 +1,16 @@
 use derive_more as dm;
 
 #[cfg(not(feature = "std"))]
-use core::{fmt, time::Duration};
+use core::time::Duration;
 #[cfg(feature = "std")]
-use std::{fmt, path::Path, time::Duration};
+use std::{path::Path, time::Duration};
 
 #[cfg(not(feature = "std"))]
 use alloc::format;
 
-use rootcause::markers;
-
 use crate::{
-    Index, KeyValue, Report, ThinContext,
-    attachment::{self, FromTo, Type, Unsupported, simple_type_name},
+    Report, ThinContext,
+    attachment::{self, FromTo, Unsupported, simple_type_name},
     report, ty,
 };
 
@@ -68,16 +66,6 @@ pub struct NetworkError;
 #[derive(ThinContext)]
 #[rootcause_types(crate)]
 pub struct ParseError;
-
-/// Represents the conversion of an `Option<T>::None` into a [`Report`].
-///
-/// This error type is used when an expected value is missing, such as:
-/// * Missing keys in maps or dictionaries
-/// * Missing fields in data structures
-/// * Failed lookups or searches
-#[derive(ThinContext)]
-#[rootcause_types(crate)]
-pub struct NotFound;
 
 /// Represents errors related to database operations.
 ///
@@ -245,29 +233,6 @@ impl ConversionError {
         report!(ctx)
             .context(Self::VALUE)
             .attach(FromTo(ty!(F), ty!(T)))
-    }
-}
-
-impl NotFound {
-    /// Create a not found error for a missing field.
-    ///
-    /// This method creates a `NotFound` report indicating that a specific
-    /// field is missing from a data structure.
-    #[track_caller]
-    pub fn with_field(field: &'static str) -> Report<Self> {
-        Report::<Self>::new(Self).attach(Field::new(field, attachment::Missing))
-    }
-
-    /// Create a not found error for a missing indexed item.
-    ///
-    /// This method creates a `NotFound` report indicating that an item
-    /// at a specific index or key could not be found.
-    pub fn with_index<T, K: fmt::Display>(key: K) -> Report<Self>
-    where
-        KeyValue<Index<K>, Type<T>>:
-            markers::ObjectMarkerFor<markers::SendSync> + fmt::Display + fmt::Debug,
-    {
-        Self::attach_kv(Index(key), Type::of::<T>())
     }
 }
 

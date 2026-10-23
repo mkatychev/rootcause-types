@@ -7,13 +7,13 @@
 //!
 //! - **Useful context attachments** - Key-value pairs, field status, type information
 //!   - see [`kv!`], [`ty!`], [`expect_field!`]
-//! - **Pre-defined contexts**: [`NotFound`], [`ParseError`], [`Timeout`], etc.
+//! - **Pre-defined contexts**: [`NoneError`], [`ParseError`], [`Timeout`], etc.
 //! - **`no_std` support**: Works in embedded and constrained environments
 //!
 //! # Quick Start
 //!
 //! ```rust
-//! use rootcause_types::{ThinContext, Report, expect_field, IntoContext, ResultIntoContext, NotFound};
+//! use rootcause_types::{ThinContext, Report, expect_field, IntoContext, ResultIntoContext, NoneError};
 //!
 //! // Define your error type
 //! #[derive(ThinContext)]
@@ -28,7 +28,7 @@
 //! }
 //!
 //! // Example with `expect_field` for optional values
-//! fn get_config_value() -> Result<&'static str, Report<NotFound>> {
+//! fn get_config_value() -> Result<&'static str, Report<MyError>> {
 //!     let config = Some("production");
 //!     expect_field!(config).into_ctx()
 //! }
@@ -71,7 +71,7 @@
 //!
 //! Common error contexts are provided out of the box:
 //!
-//! - [`NotFound`] - Missing resources, failed lookups
+//! - [`NoneError`] - Missing resources, failed lookups
 //! - [`ParseError`] - Parsing and deserialization failures
 //! - [`Timeout`] - Operations that exceed time limits
 //! - [`InvalidInput`] - Validation and input errors
@@ -324,17 +324,17 @@ pub trait IntoContext {
     /// # Example
     ///
     /// ```
-    /// use rootcause_types::{IntoContext, ThinContext, Report, NotFound, ResultIntoContext, DbError};
+    /// use rootcause_types::{IntoContext, ThinContext, Report, NoneError, ResultIntoContext, DbError, AttachExt, report};
     ///
     /// #[derive(ThinContext)]
     /// struct ServiceError;
     ///
     /// fn fetch_user_data() -> Result<String, Report<ServiceError>> {
-    ///     // 1. Simulate database operation that returns `NotFound`
-    ///     let db_result: Result<String, Report<NotFound>> =
-    ///         Err(NotFound::attach_kv("user_id", 123));
+    ///     // 1. Simulate database operation that returns `NoneError`
+    ///     let db_result: Result<String, Report<NoneError>> =
+    ///         Err(report!(NoneError::new::<String>()).attach_kv("user_id", 123));
     ///
-    ///     // 2. Convert `NotFound` to `DbError`
+    ///     // 2. Convert `NoneError` to `DbError`
     ///     let database_result: Result<String, Report<DbError>> =
     ///         db_result.into_ctx();
     ///
@@ -357,14 +357,6 @@ impl<C: ?Sized + 'static> IntoContext for Report<C> {
             // Different context type: nest the old report under the new context.
             Err(report) => report.context(C2::VALUE),
         }
-    }
-}
-
-impl IntoContext for Box<dyn core::error::Error + Send + Sync> {
-    #[inline]
-    #[track_caller]
-    fn into_ctx<C2: ThinContext>(self) -> Report<C2> {
-        rootcause::compat::IntoRootcause::into_rootcause(self).context(C2::VALUE)
     }
 }
 
@@ -402,10 +394,10 @@ pub trait ResultIntoContext<V, E>: ResultExt<V, E> {
     ///
     /// ```
     /// use rootcause_types::{
-    ///     DbError, NotFound, OptionExt, Report, ResultIntoContext, expect_field,
+    ///     DbError, NoneError, OptionExt, Report, ResultIntoContext, expect_field,
     /// };
     ///
-    /// fn find_user(id: u64) -> Result<User, Report<NotFound>> {
+    /// fn find_user(id: u64) -> Result<User, Report<DbError>> {
     ///     Some(User {
     ///         id,
     ///         email: Some("user@example.com".to_string()),
@@ -419,7 +411,7 @@ pub trait ResultIntoContext<V, E>: ResultExt<V, E> {
     /// }
     ///
     /// fn find_user_and_get_email(user_id: u64) -> Result<String, Report<DbError>> {
-    ///     // Simulate finding a user (might return NotFound)
+    ///     // Simulate finding a user (might return NoneError)
     ///     find_user(user_id).and_then_ctx(|user| {
     ///         // Extract email from user
     ///         expect_field!(user.email).into_ctx()
@@ -772,9 +764,9 @@ impl<T, E> ClearResult<T, E> for Result<T, E> {
     }
 }
 
-/// Extension trait for `Option<T>` that provides methods to build `NotFound` reports.
+/// Extension trait for `Option<T>` that provides methods to build [`NoneError`] reports.
 ///
-/// This trait allows you to build `NotFound` reports from `None` values with
+/// This trait allows you to build [`NoneError`] reports from `None` values with
 /// descriptive key-value, field, or index attachments. For the plain
 /// `Option -> Report` conversion (including the expected type name), prefer the
 /// upstream [`OptionExt::ok_or_report`].
@@ -782,17 +774,17 @@ pub trait OptionReport<T>
 where
     Self: Sized,
 {
-    /// Convert `None` into a `NotFound` error with key-value context.
-    fn expect_kv<K, V>(self, key: K, value: V) -> Result<T, Report<NotFound>>
+    /// Convert `None` into a [`NoneError`] error with key-value context.
+    fn expect_kv<K, V>(self, key: K, value: V) -> Result<T, Report<NoneError>>
     where
         KeyValue<K, V>: markers::ObjectMarkerFor<markers::SendSync> + fmt::Display + fmt::Debug;
-    /// Convert `None` into a `NotFound` error for a missing field.
-    fn expect_field(self, field: &'static str) -> Result<T, Report<NotFound>>;
+    /// Convert `None` into a [`NoneError`] error for a missing field.
+    fn expect_field(self, field: &'static str) -> Result<T, Report<NoneError>>;
 
-    /// Convert `None` into a `NotFound` error with key-value context where value is debug-formatted.
+    /// Convert `None` into a [`NoneError`] error with key-value context where value is debug-formatted.
     #[inline]
     #[track_caller]
-    fn expect_kv_dbg<K, V>(self, key: K, value: V) -> Result<T, Report<NotFound>>
+    fn expect_kv_dbg<K, V>(self, key: K, value: V) -> Result<T, Report<NoneError>>
     where
         V: Debug,
         KeyValue<K, Dbg<V>>:
@@ -801,10 +793,10 @@ where
         self.expect_kv(key, Dbg(value))
     }
 
-    /// Convert `None` into a `NotFound` error for a missing indexed item.
+    /// Convert `None` into a [`NoneError`] error for a missing indexed item.
     #[inline]
     #[track_caller]
-    fn expect_by<K: fmt::Display>(self, key: K) -> Result<T, Report<NotFound>>
+    fn expect_by<K: fmt::Display>(self, key: K) -> Result<T, Report<NoneError>>
     where
         KeyValue<Index<K>, Type<T>>:
             markers::ObjectMarkerFor<markers::SendSync> + fmt::Display + fmt::Debug,
@@ -812,10 +804,10 @@ where
         self.expect_kv(Index(key), Type::of::<T>())
     }
 
-    /// Convert `None` into a `NotFound` error with a lazily-computed index key.
+    /// Convert `None` into a [`NoneError`] error with a lazily-computed index key.
     #[inline]
     #[track_caller]
-    fn expect_with<F, K: fmt::Display>(self, key_fn: F) -> Result<T, Report<NotFound>>
+    fn expect_with<F, K: fmt::Display>(self, key_fn: F) -> Result<T, Report<NoneError>>
     where
         F: FnOnce() -> K,
         KeyValue<Index<K>, Type<T>>:
@@ -828,22 +820,24 @@ where
 impl<T> OptionReport<T> for Option<T> {
     #[inline]
     #[track_caller]
-    fn expect_kv<K, V>(self, key: K, value: V) -> Result<T, Report<NotFound>>
+    fn expect_kv<K, V>(self, key: K, value: V) -> Result<T, Report<NoneError>>
     where
         KeyValue<K, V>: markers::ObjectMarkerFor<markers::SendSync> + fmt::Display + fmt::Debug,
     {
         match self {
             Some(v) => Ok(v),
-            None => Err(NotFound::attach_kv(key, value)),
+            None => Err(report!(NoneError::new::<T>()).attach_kv(key, value)),
         }
     }
 
     #[inline]
     #[track_caller]
-    fn expect_field(self, field: &'static str) -> Result<T, Report<NotFound>> {
+    fn expect_field(self, field: &'static str) -> Result<T, Report<NoneError>> {
         match self {
             Some(v) => Ok(v),
-            None => Err(NotFound::with_field(field)),
+            None => {
+                Err(report!(NoneError::new::<T>()).attach(Field::new(field, attachment::Missing)))
+            }
         }
     }
 }
@@ -929,20 +923,20 @@ macro_rules! __field {
 /// Converts an `Option` to a `Result`, using the extracted field name for error context.
 ///
 /// This macro extracts field names from expressions and uses them to create descriptive
-/// `NotFound` errors when the `Option` is `None`. It works with variable names, struct
+/// `NoneError` errors when the `Option` is `None`. It works with variable names, struct
 /// fields, method calls, and complex expressions.
 ///
 /// # Example
 ///
 /// ```
-/// use rootcause_types::{expect_field, NotFound, Report};
+/// use rootcause_types::{expect_field, NoneError, Report};
 ///
 /// struct User {
 ///     email: Option<String>,
 /// }
 ///
 /// let user = User { email: None };
-/// let result: Result<&String, Report<NotFound>> = expect_field!(user.email.as_ref());
+/// let result: Result<&String, Report<NoneError>> = expect_field!(user.email.as_ref());
 /// // Error will show: field "email" is missing
 /// assert!(result.is_err());
 /// ```
@@ -965,10 +959,10 @@ macro_rules! expect_field {
 /// # Example
 ///
 /// ```
-/// use rootcause_types::{NotFound, Report, ensure};
+/// use rootcause_types::{NoneError, Report, ensure};
 ///
-/// fn check(value: i32) -> Result<(), Report<NotFound>> {
-///     ensure!(value > 0, NotFound);
+/// fn check(value: i32) -> Result<(), Report<NoneError>> {
+///     ensure!(value > 0, NoneError::new::<i32>());
 ///     Ok(())
 /// }
 ///
@@ -1159,15 +1153,6 @@ mod test {
             result.map_err(IntoContext::into_ctx)
         }
 
-        assert_err!(output());
-    }
-
-    #[test]
-    fn boxed_dyn_error_into_ctx() {
-        fn output() -> Result<usize, Report<MyError>> {
-            let boxed: Box<dyn core::error::Error + Send + Sync> = Box::new(core::fmt::Error);
-            Err(boxed.into_ctx())
-        }
         assert_err!(output());
     }
 
